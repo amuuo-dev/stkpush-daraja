@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 type DataFromForm = {
   mpesa_phone: string;
@@ -14,8 +14,28 @@ const PaymentForm = () => {
     amount: 0,
   });
 
+  const [isPending, setIsPending] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusType, setStatusType] = useState<
+    "success" | "error" | "info" | null
+  >(null);
+
+  const pollingRef = useRef<NodeJS.Timeout>(null);
+  const timeOutRef = useRef<NodeJS.Timeout>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (timeOutRef.current) clearTimeout(timeOutRef.current);
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setIsPending(true);
+    setStatusMessage("Sending STK request....");
+    setStatusType("info");
+
     const formData = {
       mpesa_number: dataFromForm.mpesa_phone.trim(),
       name: dataFromForm.name.trim(),
@@ -32,14 +52,52 @@ const PaymentForm = () => {
       });
       const data = await response.json();
       if (data.error) {
-        alert(`❌ Payment failed: ${data.error}`);
-      } else {
-        alert("✅ STK Push sent! Check your phone to complete payment.");
+        setIsPending(false);
+        setStatusMessage(`Payment Failed.. ${data.error}`);
+        setStatusType("error");
       }
+
+      setStatusMessage("STK Push sent! Please check your phone...");
+      setStatusType("info");
+
+      pollingRef.current = setInterval(async () => {
+        const response = await fetch("/api/mpesa/callback");
+        const data = await response.json();
+
+        if (data?.Body?.stkCallback) {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          if (timeOutRef.current) clearTimeout(timeOutRef.current);
+
+          setIsPending(false);
+          const { ResultCode, ResultDesc } = data.Body.stkCallback;
+          if (ResultCode === 0) {
+            setStatusMessage("Payment successful!");
+            setStatusType("success");
+          } else {
+            setStatusMessage(`Failed ${ResultDesc}`);
+            setStatusType("error");
+          }
+        }
+      }, 3000);
+
+      timeOutRef.current = setTimeout(() => {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        setIsPending(false);
+        setStatusMessage("Payment took too long. Please try again.");
+        setStatusType("error");
+      }, 120000);
     } catch (error) {
       console.error("Error submitting payment:", error);
-      alert("Something went wrong. Please try again.");
+      setStatusMessage("Something went wrong. Please try again.");
+      setStatusType("error");
+      setIsPending(false);
     }
+  };
+
+  const statusStyles = {
+    success: "bg-green-100 text-green-700 border border-green-300",
+    error: "bg-red-100 text-red-700 border border-red-300",
+    info: "bg-orange-100 text-orange-700 border border-orange-300",
   };
 
   return (
@@ -116,11 +174,22 @@ const PaymentForm = () => {
                 </div>
               </div>
               <div>
+                {statusMessage && (
+                  <div
+                    className={`rounded-md px-4 py-3 text-sm font-medium mb-2 ${
+                      statusType ? statusStyles[statusType] : ""
+                    }`}
+                  >
+                    {statusMessage}
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   className="inline-flex cursor-pointer w-full items-center justify-center rounded-md border border-transparent bg-orange-500 px-4 py-4 text-base font-semibold text-white transition-all duration-200 hover:bg-orange-600 focus:bg-orange-600 focus:outline-none"
+                  disabled={isPending}
                 >
-                  Proceed With payment
+                  {isPending ? "Processing" : "Proceed With payment"}
                 </button>
               </div>
             </div>

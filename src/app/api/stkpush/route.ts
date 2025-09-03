@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       BusinessShortCode: process.env.MPESA_SHORTCODE,
       Password: password,
       Timestamp: timestamp,
-      TransactionType: "CustomerBuyGoodsOnline",
+      TransactionType: "CustomerPayBillOnline",
       Amount: amount,
       PartyA: phoneNumber,
       PartyB: process.env.MPESA_SHORTCODE,
